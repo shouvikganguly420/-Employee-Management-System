@@ -159,29 +159,64 @@ def add_employee(data, photo_path, doc_paths):
   return success
 
 
-def update_employee_details(emp_id, data):
+def update_employee_details(emp_id, data, new_photo_path=None):
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
-  cursor.execute(
-      """
-        UPDATE employees 
-        SET name = ?, address = ?, phone = ?, email = ?, guardian_name = ?, guardian_phone = ?, education = ?, team = ?, team_leader = ?, onboarding_date = ?
-        WHERE emp_id = ?
-    """,
-      (
-          data["name"],
-          data["address"],
-          data["phone"],
-          data["email"],
-          data["guardian_name"],
-          data["guardian_phone"],
-          data["education"],
-          data["team"],
-          data["team_leader"],
-          data["onboarding_date"],
-          emp_id,
-      ),
-  )
+
+  if new_photo_path:
+    # Optional: fetch old photo path to delete old file if needed
+    cursor.execute(
+        "SELECT photo_path FROM employees WHERE emp_id = ?", (emp_id,)
+    )
+    row = cursor.fetchone()
+    if row and row[0] and os.path.exists(row[0]):
+      try:
+        os.remove(row[0])
+      except:
+        pass
+
+    cursor.execute(
+        """
+            UPDATE employees 
+            SET name = ?, address = ?, phone = ?, email = ?, guardian_name = ?, guardian_phone = ?, education = ?, team = ?, team_leader = ?, onboarding_date = ?, photo_path = ?
+            WHERE emp_id = ?
+        """,
+        (
+            data["name"],
+            data["address"],
+            data["phone"],
+            data["email"],
+            data["guardian_name"],
+            data["guardian_phone"],
+            data["education"],
+            data["team"],
+            data["team_leader"],
+            data["onboarding_date"],
+            new_photo_path,
+            emp_id,
+        ),
+    )
+  else:
+    cursor.execute(
+        """
+            UPDATE employees 
+            SET name = ?, address = ?, phone = ?, email = ?, guardian_name = ?, guardian_phone = ?, education = ?, team = ?, team_leader = ?, onboarding_date = ?
+            WHERE emp_id = ?
+        """,
+        (
+            data["name"],
+            data["address"],
+            data["phone"],
+            data["email"],
+            data["guardian_name"],
+            data["guardian_phone"],
+            data["education"],
+            data["team"],
+            data["team_leader"],
+            data["onboarding_date"],
+            emp_id,
+        ),
+    )
   conn.commit()
   conn.close()
 
@@ -559,7 +594,6 @@ with tab2:
             st.info("No photo uploaded")
 
         with col_info:
-          # Clickable email link opening the default mail client (Outlook, etc.)
           email_val = row.get("email")
           if (
               pd.notna(email_val)
@@ -673,10 +707,10 @@ with tab3:
         st.rerun()
 
 with tab4:
-  st.subheader("✏️ Edit Employee Details")
+  st.subheader("✏️ Edit Employee Details & Photo")
   st.write(
       "Select an employee to update their personal details, phone, email, team,"
-      " or leader."
+      " leader, or profile photo."
   )
 
   df_edit = get_all_employees()
@@ -702,6 +736,21 @@ with tab4:
 
     with st.form(f"edit_employee_form_{edit_emp_id}"):
       st.markdown(f"**Editing Record for Employee ID:** `{edit_emp_id}`")
+
+      # Display current photo preview inside the form if available
+      current_photo = emp_data.get("photo_path")
+      if current_photo and os.path.exists(current_photo):
+        st.image(current_photo, width=100, caption="Current Photo")
+      else:
+        st.info("No photo currently uploaded for this employee.")
+
+      new_photo_file = st.file_uploader(
+          "Upload New Profile Photo (Optional - leaves current photo if empty)",
+          type=["png", "jpg", "jpeg"],
+          key=f"new_photo_{edit_emp_id}",
+      )
+
+      st.markdown("---")
       col1, col2 = st.columns(2)
 
       with col1:
@@ -807,6 +856,14 @@ with tab4:
               "Please fill in all mandatory fields (Name, Phone, Team Leader)."
           )
         else:
+          saved_photo_path = None
+          if new_photo_file:
+            saved_photo_path = os.path.join(
+                PHOTO_DIR, f"{edit_emp_id}_{new_photo_file.name}"
+            )
+            with open(saved_photo_path, "wb") as f:
+              f.write(new_photo_file.getbuffer())
+
           updated_data = {
               "name": edit_name,
               "address": edit_address,
@@ -819,7 +876,9 @@ with tab4:
               "team_leader": edit_team_leader,
               "onboarding_date": str(edit_onboarding),
           }
-          update_employee_details(edit_emp_id, updated_data)
+          update_employee_details(
+              edit_emp_id, updated_data, new_photo_path=saved_photo_path
+          )
           st.success(
               f"Successfully updated details for {edit_name} (ID:"
               f" {edit_emp_id})!"
